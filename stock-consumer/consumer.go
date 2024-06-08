@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func failOnError(err error, msg string) {
@@ -12,7 +15,29 @@ func failOnError(err error, msg string) {
 	}
 }
 
+func aggregateStock(msgsBody json) float64 {
+
+	var sum float64 = 0
+	var len float64 = 0
+
+	for nzCount := 0; nzCount <= len; nzCount++ {
+		prices := append(prices, msgsBody.price)
+		sum += msgsBody.price
+	}
+
+	avg := (sum / len)
+
+	entry := bson.D{{"CompanyName", "AvgPrice"}, {companyName, avg}}
+	result, err := usersCollection.InsertOne(context.TODO(), entry)
+}
+
 func main() {
+
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI("mongodb://localhost:27017"))
+	failOnError(err, "Failed to connect to MongoDB")
+
+	usersCollection := client.Database("Stock").Collection(companyName)
+
 	conn, err := amqp.Dial("amqp://stockmarket:supersecret123@localhost:5672/")
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
@@ -21,35 +46,19 @@ func main() {
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
 
-	err = ch.ExchangeDeclare(
-		"logs",   // name
-		"fanout", // type
-		true,     // durable
-		false,    // auto-deleted
-		false,    // internal
-		false,    // no-wait
-		nil,      // arguments
-	)
-	failOnError(err, "Failed to declare an exchange")
+	// Declaring the variable for the queue name, which is the same
+	// as the stock company.
+	var companyName string = "MSFT"
 
 	q, err := ch.QueueDeclare(
-		"",    // name
-		false, // durable
-		false, // delete when unused
-		true,  // exclusive
-		false, // no-wait
-		nil,   // arguments
+		companyName, // name of the queue is the same as the stock
+		false,       // durable
+		false,       // delete when unused
+		false,       // exclusive
+		false,       // no-wait
+		nil,         // arguments
 	)
 	failOnError(err, "Failed to declare a queue")
-
-	err = ch.QueueBind(
-		q.Name, // queue name
-		"",     // routing key
-		"logs", // exchange
-		false,
-		nil,
-	)
-	failOnError(err, "Failed to bind a queue")
 
 	msgs, err := ch.Consume(
 		q.Name, // queue
@@ -62,14 +71,8 @@ func main() {
 	)
 	failOnError(err, "Failed to register a consumer")
 
-	var forever chan struct{}
-
-	go func() {
-		for d := range msgs {
-			log.Printf(" [x] %s", d.Body)
-		}
-	}()
-
-	log.Printf(" [*] Waiting for logs. To exit press CTRL+C")
-	<-forever
+	for d := range msgs {
+		var msgsBody json = d.Body
+		aggregateStock(msgsBody)
+	}
 }
