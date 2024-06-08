@@ -33,7 +33,7 @@ func aggregateStock(msgsBody json) float64 {
 
 func main() {
 
-	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI("mongodb://localhost:27017"))
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI("mongodb://localhost:27017,localhost:27018,localhost:27019/?replicaSet=rs0"))
 	failOnError(err, "Failed to connect to MongoDB")
 
 	usersCollection := client.Database("Stock").Collection(companyName)
