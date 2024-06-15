@@ -1,0 +1,131 @@
+services:
+  # Konfiguration für Frontend:
+  frontend1:
+    image: tekopatrick/stock-liveview-master:v1.0
+    container_name: Frontend1_TA
+    restart: always
+    ports:
+      - 3000:3000
+  
+  frontend2:
+    image: tekopatrick/stock-liveview-master:v1.0
+    container_name: Frontend2_TA
+    restart: always
+    ports:
+      - 3001:3000
+
+  # Konfiguration für Consumer:
+  consumer1:
+    image: tekopatrick/stock-consumer:v1.0
+    container_name: Consumer1_TA
+    restart: always
+    depends_on:
+      - rabbitmq
+      - mongo1
+    environment:
+      - COMPANYNAME=AAPL
+
+  consumer2:
+    image: tekopatrick/stock-consumer:v1.0
+    container_name: Consumer2_TA
+    restart: always
+    depends_on:
+      - rabbitmq
+      - mongo1
+    environment:
+      - COMPANYNAME=MSFT
+      
+  consumer3:
+    image: tekopatrick/stock-consumer:v1.0
+    container_name: Consumer3_TA
+    restart: always
+    depends_on:
+      - rabbitmq
+      - mongo1
+    environment:
+      - COMPANYNAME=TSLA
+
+  # Konfiguration für Publisher:
+  publisher:
+    image: tekopatrick/stock-publisher:v1.0
+    container_name: Publisher_TA
+    restart: always
+    depends_on:
+      - rabbitmq
+  
+  # Konfiguration für Nginx:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: Nginx_TA
+    restart: always
+    ports:
+      - 80:80
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend1
+      - frontend2
+
+  # Konfiguration für RabbitMQ.
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: RabbitMQ_TA   
+    restart: always 
+    ports:
+      - 15672:15672
+      - 5672:5672
+    environment:
+      - RABBITMQ_DEFAULT_USER=stockmarket
+      - RABBITMQ_DEFAULT_PASS=supersecret123
+  
+  # Konfiguration für die MongoDB mit Replikation.
+  mongo1:
+    image: mongo:7.0
+    container_name: MongoDB1_TA
+    ports:
+      - "27017:27017" 
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   
+    volumes:
+      - "mongo1_data:/data/db"
+      - "mongo1_config:/data/configdb"
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'host.docker.internal:27017',priority:1},{_id:1,host:'host.docker.internal:27018',priority:0.5},{_id:2,host:'host.docker.internal:27019',priority:0.5}]}) }" | mongosh --port 27017 --quiet
+      interval: 5s
+      timeout: 30s
+      retries: 5
+      start_period: 0s
+
+  mongo2:
+    image: mongo:7.0
+    container_name: MongoDB2_TA
+    ports:
+      - "27018:27018"  
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27018"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"    
+    volumes:
+     - "mongo2_data:/data/db"
+     - "mongo2_config:/data/configdb"
+
+  mongo3:
+    image: mongo:7.0
+    container_name: MongoDB3_TA
+    ports:
+      - "27019:27019"
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27019"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+     - "mongo3_data:/data/db"
+     - "mongo3_config:/data/configdb"
+
+# Speicher für MongoDB.
+volumes:
+  mongo1_data:
+  mongo1_config:  
+  mongo2_data:
+  mongo2_config:
+  mongo3_data:
+  mongo3_config:
