@@ -6,6 +6,10 @@ services:
     restart: always
     ports:
       - 3000:3000
+    environment:
+      - MONGODB_URL=mongodb://mongo1:27017,mongo2:27018,mongo3:27019/?replicaSet=rs0
+      - MONGODB_DB=Stockmarket
+      - MONGODB_COLLECTION=Stocks
   
   frontend2:
     image: tekopatrick/stock-liveview-master:v1.0
@@ -13,10 +17,14 @@ services:
     restart: always
     ports:
       - 3001:3000
+    environment:
+      - MONGODB_URL=mongodb://mongo1:27017,mongo2:27018,mongo3:27019/?replicaSet=rs0
+      - MONGODB_DB=Stockmarket
+      - MONGODB_COLLECTION=Stocks
 
   # Konfiguration für Consumer:
   consumer1:
-    image: tekopatrick/stock-consumer:v1.0
+    image: tekopatrick/stock-consumer:v1.3
     container_name: Consumer1_TA
     restart: always
     depends_on:
@@ -24,9 +32,10 @@ services:
       - mongo1
     environment:
       - COMPANYNAME=AAPL
+      - MONGODB_URL=mongodb://mongo1:27017,mongo2:27018,mongo3:27019/?replicaSet=rs0
 
   consumer2:
-    image: tekopatrick/stock-consumer:v1.0
+    image: tekopatrick/stock-consumer:v1.3
     container_name: Consumer2_TA
     restart: always
     depends_on:
@@ -34,9 +43,10 @@ services:
       - mongo1
     environment:
       - COMPANYNAME=MSFT
+      - MONGODB_URL=mongodb://mongo1:27017,mongo2:27018,mongo3:27019/?replicaSet=rs0
       
   consumer3:
-    image: tekopatrick/stock-consumer:v1.0
+    image: tekopatrick/stock-consumer:v1.3
     container_name: Consumer3_TA
     restart: always
     depends_on:
@@ -44,6 +54,7 @@ services:
       - mongo1
     environment:
       - COMPANYNAME=TSLA
+      - MONGODB_URL=mongodb://mongo1:27017,mongo2:27018,mongo3:27019/?replicaSet=rs0
 
   # Konfiguration für Publisher:
   publisher:
@@ -52,6 +63,9 @@ services:
     restart: always
     depends_on:
       - rabbitmq
+    environment:
+      - RABBITMQ_URL=amqp://stockmarket:supersecret123@rabbitmq:5672/
+      - TICKER_INTERVAL=1
   
   # Konfiguration für Nginx:
   nginx:
