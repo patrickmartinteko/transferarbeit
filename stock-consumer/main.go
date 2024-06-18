@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"math"
 	"os"
 	"time"
 
@@ -25,12 +26,13 @@ type StockMessage struct {
 
 // Reading to enviorment variable.
 var companyName string = os.Getenv("COMPANYNAME")
+var mongoURL string = os.Getenv("MONGODB_URL")
 
 // main is the entry point of the application.
 func main() {
 
 	// Connecting to MongoDB.
-	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI("mongodb://localhost:27017,localhost:27018,localhost:27019/?replicaSet=rs0"))
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(mongoURL))
 	failOnError(err, "Failed to connect to MongoDB")
 
 	// Test connection with ping.
@@ -41,7 +43,7 @@ func main() {
 	usersCollection := client.Database("Stockmarket").Collection("Stocks")
 
 	// Connecting with RabbitMQ.
-	conn, err := amqp.Dial("amqp://stockmarket:supersecret123@localhost:5672/")
+	conn, err := amqp.Dial("amqp://stockmarket:supersecret123@rabbitmq:5672/")
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
 
@@ -56,7 +58,8 @@ func main() {
 		failOnError(err, "Company Name not defiened")
 	}
 
-	// TODO
+	// Starting stock reader for company.
+	log.Printf("Starting stock reader for company: %s", companyName)
 	stockReader(ch, usersCollection)
 
 	log.Printf("All stock publishers are running. Press CTRL+C to exit.")
@@ -79,15 +82,15 @@ func aggregateStock(prices []float64) float64 {
 	return total / float64(len(prices))
 }
 
-/*
- *	saveToMongoDB saves the average to the MongoDB
- */
+// saveToMongoDB saves the average to the MongoDB
 func saveToMongoDB(usersCollection *mongo.Collection, average float64) {
+
+	avg := math.Round(average)
 
 	// Defiening the document structur.
 	document := bson.M{
 		"company":  companyName,
-		"avgPrice": average,
+		"avgPrice": avg,
 	}
 
 	// If the insertion of the document takes longer as 5 seconds, it will be canceled.
@@ -99,9 +102,7 @@ func saveToMongoDB(usersCollection *mongo.Collection, average float64) {
 	failOnError(err, "Failed to insert document into MongoDB")
 }
 
-/*
- *	stockReader reads msgs from Queue
- */
+// stockReader reads msgs from Queue
 func stockReader(ch *amqp.Channel, usersCollection *mongo.Collection) {
 
 	// Declaring the batchsize.
@@ -121,30 +122,34 @@ func stockReader(ch *amqp.Channel, usersCollection *mongo.Collection) {
 	)
 	failOnError(err, "Failed to declare a queue")
 
-	// Consume message from Queue.
-	msgs, err := ch.Consume(
-		q.Name,
-		"",
-		true, // Auto-Acknowledge -> Delete message when successfully consumed
-		false,
-		false,
-		false,
-		nil,
-	)
-	failOnError(err, "Failed to register a consumer")
+	for {
+		// Consume message from Queue.
+		msgs, err := ch.Consume(
+			q.Name,
+			"",
+			true, // Auto-Acknowledge -> Delete message when successfully consumed
+			false,
+			false,
+			false,
+			nil,
+		)
+		failOnError(err, "Failed to register a consumer")
 
-	// Putting the send prices into the slice.
-	for i := 0; i < batchSize; i++ {
-		msg := <-msgs
+		log.Println("Waiting for messages...")
 
-		var stockMessage StockMessage
-		err := json.Unmarshal(msg.Body, &stockMessage)
-		failOnError(err, "Failed to unmarshal message")
+		// Putting the send prices into the slice.
+		for i := 0; i < batchSize; i++ {
+			msg := <-msgs
 
-		prices = append(prices, stockMessage.Price)
+			var stockMessage StockMessage
+			err := json.Unmarshal(msg.Body, &stockMessage)
+			failOnError(err, "Failed to unmarshal message")
+
+			prices = append(prices, stockMessage.Price)
+		}
+
+		average := aggregateStock(prices)
+		log.Printf("Calculated average price: %f", average)
+		saveToMongoDB(usersCollection, average)
 	}
-
-	average := aggregateStock(prices)
-	saveToMongoDB(usersCollection, average)
-
 }
